@@ -5,9 +5,9 @@ import uuid
 
 from local_data_collection.sensor_polling.hardware_sensor_collectors import init_computer, get_cpu_data, get_gpu_data, get_memory_data
 from local_data_collection.sensor_polling.adls_payload import UploadMemory, adls_credentials, upload_blob
-from local_data_collection.utils import config_loader, logger
+from local_data_collection.utils import config_loader, logging_ldc
 
-logger.logging_setup()
+logging_ldc.logging_setup()
 
 def main():
     test_id = str(uuid.uuid4())
@@ -37,9 +37,9 @@ def main():
                                                     memory_payload=memory_data,
                                                     test_id=test_id)
                 else:
-                    upload_blob_result = upload_blob(credentials=credential, env_mapping=env_mapping, sensor_buffer=mainmemory.payload)
+                    upload_blob(credentials=credential, env_mapping=env_mapping, sensor_buffer=mainmemory.payload)
 
-                    mainmemory.clear_buffer(buffer_uploaded=upload_blob_result)
+                    mainmemory.clear_buffer()
 
         if mainmemory.payload.snapshots:
             upload_blob(credentials=credential, env_mapping=env_mapping, sensor_buffer=mainmemory.payload)

@@ -40,11 +40,10 @@ class UploadMemory:
         else:
             return False
 
-    def clear_buffer(self, buffer_uploaded) -> None:
-        if buffer_uploaded == True:
-            self.payload.snapshots.clear()
-            self.count = 0
-            logging.info("Payload snapshots list cleared")
+    def clear_buffer(self) -> None:
+        self.payload.snapshots.clear()
+        self.count = 0
+        logging.info("Payload snapshots list cleared")
 
 def adls_credentials(environment: str | None=None) -> tuple[ClientSecretCredential, dict]:
     dotenv_path = find_dotenv()
@@ -76,23 +75,19 @@ def adls_credentials(environment: str | None=None) -> tuple[ClientSecretCredenti
 
     return credentials, env_mapping
 
-def upload_blob(credentials: ClientSecretCredential, env_mapping: dict, sensor_buffer: HardwarePayload):
-    try:
-        blob_service_client = BlobServiceClient(account_url=env_mapping["STORAGE_URL"], credential=credentials)
-        container_client = blob_service_client.get_container_client(container=env_mapping["CONTAINER"])
+def upload_blob(credentials: ClientSecretCredential, env_mapping: dict, sensor_buffer: HardwarePayload) -> None:
+    blob_service_client = BlobServiceClient(account_url=env_mapping["STORAGE_URL"], credential=credentials)
+    container_client = blob_service_client.get_container_client(container=env_mapping["CONTAINER"])
 
-        HardwarePayload.model_validate(sensor_buffer.model_dump())
-        sensors_json = sensor_buffer.model_dump_json()
+    HardwarePayload.model_validate(sensor_buffer.model_dump())
+    sensors_json = sensor_buffer.model_dump_json()
 
-        timestamp = datetime.now(timezone.utc).strftime(r"%Y%m%d_%H%M%S")
-        datefolder = datetime.now(timezone.utc).strftime(r"%Y-%m-%d")
-        event_id = uuid.uuid4()
+    timestamp = datetime.now(timezone.utc).strftime(r"%Y%m%d_%H%M%S")
+    datefolder = datetime.now(timezone.utc).strftime(r"%Y-%m-%d")
+    event_id = uuid.uuid4()
 
-        blob_name = f"ingest_date={datefolder}/hardware_sensor_data_{timestamp}_{event_id}.json"
-        blob_client = container_client.get_blob_client(blob=blob_name)
-        blob_client.upload_blob(data=sensors_json, content_settings=ContentSettings(content_type="application/json"))
-        logging.info(f"Sucessfully uploaded blob {blob_name}")
-        return True
-    except Exception as e:
-        logging.exception(f"Error uploading file blob to the azure container: {e} test id: {sensor_buffer.metadata['test_id']}")
-        return False
+    blob_name = f"ingest_date={datefolder}/hardware_sensor_data_{timestamp}_{event_id}.json"
+    blob_client = container_client.get_blob_client(blob=blob_name)
+    blob_client.upload_blob(data=sensors_json, content_settings=ContentSettings(content_type="application/json"))
+    logging.info(f"Sucessfully uploaded blob {blob_name}")
+    
