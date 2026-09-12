@@ -5,59 +5,56 @@ import yaml
 
 from local_data_collection.utils import config_loader
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
-def conf_dir(tmp_path, monkeypatch):
-    """Redirect config_loader's root resolution to a throwaway tree so no real conf/ file is read."""
-    fake_module = tmp_path / "pkg" / "local_data_collection" / "utils" / "config_loader.py"
+def conf_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    fake_module = tmp_path / "local_data_collection" / "utils" / "config_loader.py"
     fake_module.parent.mkdir(parents=True)
     fake_module.touch()
+
     monkeypatch.setattr(config_loader, "__file__", str(fake_module))
 
-    root = Path(str(fake_module)).resolve().parents[3]
-    conf = root / "conf" / "conf_local_data_collection"
-    conf.mkdir(parents=True)
-    return conf
+    configuration_directory = fake_module.parents[1] / "conf"
+    configuration_directory.mkdir()
+    return configuration_directory
 
 
-def write_conf(conf_dir, filename, content):
-    target = conf_dir / filename
-    target.write_text(yaml.safe_dump(content))
-    return target
+def write_yaml(configuration_directory: Path, filename: str, contents: dict[str, object]) -> None:
+    (configuration_directory / filename).write_text(
+        yaml.safe_dump(contents),
+        encoding="utf-8",
+    )
 
 
-def test_load_conf_when_yaml_is_valid_returns_parsed_dict(conf_dir):
-    write_conf(conf_dir, "sensors.yml", {"occt": {"stability_test": {"length_in_minutes": 5}}})
+def test_load_conf_returns_parsed_yaml_mapping(conf_dir: Path) -> None:
+    expected = {"occt": {"stability_test": {"length_in_minutes": 5}}}
+    write_yaml(conf_dir, "sensors.yml", expected)
 
-    result = config_loader.load_conf("sensors.yml")
-
-    assert result == {"occt": {"stability_test": {"length_in_minutes": 5}}}
+    assert config_loader.load_conf("sensors.yml") == expected
 
 
-def test_load_conf_when_file_is_missing_raises_file_not_found_error(conf_dir):
+def test_load_conf_accepts_path_filename(conf_dir: Path) -> None:
+    expected = {"key": "value"}
+    write_yaml(conf_dir, "settings.yml", expected)
+
+    assert config_loader.load_conf(Path("settings.yml")) == expected
+
+
+def test_load_conf_raises_file_not_found_error_for_missing_file(conf_dir: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        config_loader.load_conf("does_not_exist.yml")
+        config_loader.load_conf("missing.yml")
 
 
-def test_load_conf_when_yaml_is_malformed_raises_yaml_error(conf_dir):
-    (conf_dir / "broken.yml").write_text("occt:\n  - 'unbalanced")
+def test_load_conf_raises_yaml_error_for_malformed_file(conf_dir: Path) -> None:
+    (conf_dir / "broken.yml").write_text("key: [unclosed", encoding="utf-8")
 
     with pytest.raises(yaml.YAMLError):
         config_loader.load_conf("broken.yml")
 
 
-@pytest.mark.parametrize(
-    "filename",
-    ["sensors.yml", Path("sensors.yml")],
-    ids=["as_str", "as_path"],
-)
-def test_load_conf_when_filename_given_as_str_or_path_returns_parsed_dict(conf_dir, filename):
-    write_conf(conf_dir, "sensors.yml", {"key": "value"})
-
-    assert config_loader.load_conf(filename) == {"key": "value"}
-
-
-def test_load_conf_when_yaml_file_is_empty_returns_none(conf_dir):
-    (conf_dir / "empty.yml").write_text("")
+def test_load_conf_returns_none_for_empty_yaml_file(conf_dir: Path) -> None:
+    (conf_dir / "empty.yml").write_text("", encoding="utf-8")
 
     assert config_loader.load_conf("empty.yml") is None
