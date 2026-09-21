@@ -4,7 +4,7 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from pyspark.sql import SparkSession, functions as F  #noqa
+from pyspark.sql import SparkSession, functions as F  # noqa
 
 from databricks_pipeline.bronze.config.bronze_config import BronzeConfig
 from databricks_pipeline.bronze.stage.bronze_stage import (
