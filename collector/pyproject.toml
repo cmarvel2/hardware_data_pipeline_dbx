@@ -1,0 +1,95 @@
+[project]
+name = "hardware_data_collector"
+version = "0.0.1"
+description = "Edge hardware data collection agent"
+authors = [
+    { name = "cmarvel@umich.edu" },
+]
+requires-python = "==3.12.*"
+dependencies = [
+    "azure-identity>=1.17,<2",
+    "azure-storage-blob>=12.28,<13",
+    "pydantic>=2.10,<3",
+    "python-dotenv>=1.2,<2",
+    "pythonnet>=3.1,<4",
+    "pyyaml>=6.0,<7",
+]
+
+[project.scripts]
+hardware-data-collector = "local_data_collection.main:main"
+
+[dependency-groups]
+dev = [
+    "ipykernel",
+    "pytest",
+    "pytest-cov>=7.1,<8",
+    "pytest-mock>=3.15,<4",
+    "ruff>=0.16,<0.17",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/local_data_collection"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+preview = false
+respect-gitignore = true
+force-exclude = true
+extend-exclude = [
+    ".venv",
+    ".vscode",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "DTZ",
+    "LOG",
+    "N",
+    "PERF",
+    "PIE",
+    "PT",
+    "RET",
+    "RUF",
+    "SIM",
+    "TRY",
+    "UP",
+]
+
+ignore = [
+    "TRY003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["local_data_collection"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: fast test with no external dependencies",
+    "integration: test requiring an external service or environment",
+    "e2e: test of the local hardware collection and upload to adls",
+]

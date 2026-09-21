@@ -10,3 +10,5 @@ scratch/**
 **/!explorations/README.md
 .env
 *.bak
+.vscode
+settings.json

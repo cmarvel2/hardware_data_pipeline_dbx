@@ -1,0 +1,45 @@
+resources:
+  jobs:
+    hardware_pipeline_job:
+      name: hardware-pipeline-${bundle.target}
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: bronze_schema
+          default: ${var.bronze_schema}
+        - name: landing_volume
+          default: ${var.landing_volume}
+        - name: bronze_table
+          default: ${var.bronze_table}
+      tasks:
+        - task_key: bronze_ingest
+          python_wheel_task:
+            package_name: hardware_data_pipeline
+            entry_point: main
+            parameters:
+            - --stage
+            - bronze
+            - --catalog
+            - "{{job.parameters.catalog}}"
+            - --bronze-schema
+            - "{{job.parameters.bronze_schema}}"
+            - --landing-volume
+            - "{{job.parameters.landing_volume}}"
+            - --bronze-table
+            - "{{job.parameters.bronze_table}}"
+            - --pipeline-run-id
+            - '{{job.run_id}}'
+          environment_key: default
+      trigger:
+        pause_status: UNPAUSED
+        file_arrival:
+          url: "/Volumes/${var.catalog}/${var.bronze_schema}/${var.landing_volume}/incoming/"
+          min_time_between_triggers_seconds: 300
+          wait_after_last_change_seconds: 60
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ../dist/*.whl
+      max_concurrent_runs: 1
