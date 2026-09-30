@@ -68,11 +68,13 @@ def test_landing_hardware_autoloader_ingests_json_into_test_bronze_table(
         .where(F.col("execution_id") == execution_id)
         .where(F.col("metadata.device_id") == device_id)
         .select(
+            "adls_upload_date",
             "source_file",
-            "ingested_at",
+            "dbx_ingest_date",
             "execution_id",
             "metadata",
             "snapshots",
+            "corrupt_record",
         )
     )
 
@@ -81,8 +83,10 @@ def test_landing_hardware_autoloader_ingests_json_into_test_bronze_table(
     row = matching_rows.first()
 
     assert row is not None
-    assert row["execution_id"] == execution_id
+    assert str(row["adls_upload_date"]) == ingest_date
     assert row["source_file"] is not None
-    assert row["ingested_at"] is not None
+    assert row["dbx_ingest_date"] is not None
+    assert row["execution_id"] == execution_id
     assert row["metadata"]["device_id"] == device_id
     assert len(row["snapshots"]) == 1
+    assert row["corrupt_record"] is None

@@ -7,12 +7,14 @@ from pytest_mock import MockerFixture
 
 from databricks_pipeline.bronze.schema import bronze_contract
 
+pytestmark = pytest.mark.unit
+
 
 class MetadataTestSetup(TypedDict):
     source_dataframe: Mock
     result_dataframe: Mock
     source_file_expression: Mock
-    ingested_at_expression: Mock
+    ingest_timestamp_expression: Mock
     execution_id_expression: Mock
     col: Mock
     current_timestamp: Mock
@@ -20,11 +22,9 @@ class MetadataTestSetup(TypedDict):
 
 
 @pytest.fixture
-def metadata_test_setup(
-    mocker: MockerFixture,
-) -> MetadataTestSetup:
+def metadata_test_setup(mocker: MockerFixture) -> MetadataTestSetup:
     source_file_expression = mocker.Mock(name="source_file_expression")
-    ingested_at_expression = mocker.Mock(name="ingested_at_expression")
+    ingest_timestamp_expression = mocker.Mock(name="ingest_timestamp_expression")
     execution_id_expression = mocker.Mock(name="execution_id_expression")
 
     source_dataframe = mocker.Mock(name="source_dataframe")
@@ -39,7 +39,7 @@ def metadata_test_setup(
     current_timestamp = mocker.patch.object(
         bronze_contract,
         "current_timestamp",
-        return_value=ingested_at_expression,
+        return_value=ingest_timestamp_expression,
     )
     lit = mocker.patch.object(
         bronze_contract,
@@ -51,7 +51,7 @@ def metadata_test_setup(
         "source_dataframe": source_dataframe,
         "result_dataframe": result_dataframe,
         "source_file_expression": source_file_expression,
-        "ingested_at_expression": ingested_at_expression,
+        "ingest_timestamp_expression": ingest_timestamp_expression,
         "execution_id_expression": execution_id_expression,
         "col": col,
         "current_timestamp": current_timestamp,
@@ -59,7 +59,6 @@ def metadata_test_setup(
     }
 
 
-@pytest.mark.unit
 def test_add_ingestion_metadata_creates_required_audit_columns(
     metadata_test_setup: MetadataTestSetup,
 ) -> None:
@@ -73,13 +72,12 @@ def test_add_ingestion_metadata_creates_required_audit_columns(
     source_dataframe.withColumns.assert_called_once_with(
         {
             "source_file": metadata_test_setup["source_file_expression"],
-            "ingested_at": metadata_test_setup["ingested_at_expression"],
+            "dbx_ingest_date": metadata_test_setup["ingest_timestamp_expression"],
             "execution_id": metadata_test_setup["execution_id_expression"],
         }
     )
 
 
-@pytest.mark.unit
 def test_add_ingestion_metadata_uses_spark_audit_expressions(
     metadata_test_setup: MetadataTestSetup,
 ) -> None:
@@ -93,7 +91,6 @@ def test_add_ingestion_metadata_uses_spark_audit_expressions(
     metadata_test_setup["lit"].assert_called_once_with("run-123")
 
 
-@pytest.mark.unit
 def test_add_ingestion_metadata_returns_enriched_dataframe(
     metadata_test_setup: MetadataTestSetup,
 ) -> None:
