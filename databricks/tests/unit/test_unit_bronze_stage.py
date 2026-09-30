@@ -16,6 +16,7 @@ class StageTestSetup:
     reader: Mock
     raw_dataframe: Mock
     enriched_dataframe: Mock
+    renamed_dataframe: Mock
     writer: Mock
     query: Mock
     add_ingestion_metadata: Mock
@@ -37,6 +38,7 @@ def stage_test_setup(mocker: MockerFixture) -> StageTestSetup:
     reader = Mock(name="autoloader_reader")
     raw_dataframe = Mock(name="raw_dataframe")
     enriched_dataframe = Mock(name="enriched_dataframe")
+    renamed_dataframe = Mock(name="renamed_dataframe")
     writer = Mock(name="delta_stream_writer")
     query = Mock(name="streaming_query")
 
@@ -44,7 +46,8 @@ def stage_test_setup(mocker: MockerFixture) -> StageTestSetup:
     reader.option.return_value = reader
     reader.load.return_value = raw_dataframe
 
-    enriched_dataframe.writeStream.format.return_value = writer
+    enriched_dataframe.withColumnRenamed.return_value = renamed_dataframe
+    renamed_dataframe.writeStream.format.return_value = writer
     writer.option.return_value = writer
     writer.trigger.return_value = writer
     writer.toTable.return_value = query
@@ -60,6 +63,7 @@ def stage_test_setup(mocker: MockerFixture) -> StageTestSetup:
         reader=reader,
         raw_dataframe=raw_dataframe,
         enriched_dataframe=enriched_dataframe,
+        renamed_dataframe=renamed_dataframe,
         writer=writer,
         query=query,
         add_ingestion_metadata=add_ingestion_metadata,
@@ -82,14 +86,19 @@ def test_landing_hardware_autoloader_reads_source_with_expected_options(
             call("cloudFiles.format", "json"),
             call("cloudFiles.schemaLocation", config.schema_location),
             call("cloudFiles.inferColumnTypes", "true"),
+            call("rescuedDataColumn", bronze_stage.RESCUED_DATA_COLUMN),
             call(
-                "rescuedDataColumn",
-                bronze_stage.RESCUED_DATA_COLUMN,
+                "columnNameOfCorruptRecord",
+                bronze_stage.CORRUPT_DATA_COLUMN,
+            ),
+            call(
+                "cloudFiles.schemaHints",
+                f"{bronze_stage.CORRUPT_DATA_COLUMN} STRING",
             ),
             call("cloudFiles.partitionColumns", "ingest_date"),
         ]
     )
-    assert stage_test_setup.reader.option.call_count == 5
+    assert stage_test_setup.reader.option.call_count == 7
     stage_test_setup.reader.load.assert_called_once_with(config.source_path)
 
 
@@ -109,7 +118,7 @@ def test_landing_hardware_autoloader_adds_ingestion_metadata(
     )
 
 
-def test_landing_hardware_autoloader_writes_enriched_dataframe_to_delta(
+def test_landing_hardware_autoloader_renames_landing_date(
     config: BronzeConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
@@ -119,13 +128,26 @@ def test_landing_hardware_autoloader_writes_enriched_dataframe_to_delta(
         run_id="run-123",
     )
 
-    (stage_test_setup.enriched_dataframe.writeStream.format.assert_called_once_with("delta"))
+    stage_test_setup.enriched_dataframe.withColumnRenamed.assert_called_once_with(
+        "ingest_date",
+        "adls_upload_date",
+    )
+
+
+def test_landing_hardware_autoloader_writes_renamed_dataframe_to_delta(
+    config: BronzeConfig,
+    stage_test_setup: StageTestSetup,
+) -> None:
+    bronze_stage.landing_hardware_autoloader(
+        spark=stage_test_setup.spark,
+        config=config,
+        run_id="run-123",
+    )
+
+    stage_test_setup.renamed_dataframe.writeStream.format.assert_called_once_with("delta")
     stage_test_setup.writer.option.assert_has_calls(
         [
-            call(
-                "checkpointLocation",
-                config.checkpoint_location,
-            ),
+            call("checkpointLocation", config.checkpoint_location),
             call("mergeSchema", "true"),
         ]
     )
