@@ -8,11 +8,12 @@ from google.protobuf.json_format import MessageToDict
 from pyspark.sql import Column, DataFrame
 from pyspark.sql.connect import functions as connect_functions
 from pyspark.sql.connect.column import Column as ConnectColumn
-from pyspark.sql.types import ArrayType, DoubleType, StringType, StructField, StructType
+from pyspark.sql.types import DoubleType, StringType, StructField, StructType, VariantType
 from pytest_mock import MockerFixture
 
+from databricks_pipeline.common.ops_config import CommonConfig
 from databricks_pipeline.silver.config.silver_config import SilverConfig
-from databricks_pipeline.silver.schema.silver_contract import quarantine_schema_check, silver_schema_check
+from databricks_pipeline.silver.schema.silver_contract import SILVER_SCHEMA_CHECK, quarantine_schema_check
 from databricks_pipeline.silver.stage import silver_stage
 
 pytestmark = pytest.mark.unit
@@ -51,8 +52,6 @@ def config() -> SilverConfig:
         bronze_schema="bronze",
         bronze_table="sensor_readings",
         silver_schema="silver",
-        silver_table="sensor_readings",
-        quarantine_table="quarantine_record",
     )
 
 
@@ -61,7 +60,6 @@ class QuarantineSetup:
     source: Mock
     packaged: Mock
     output: Mock
-    payload_type: StructType
 
 
 @pytest.fixture
@@ -81,7 +79,8 @@ def quarantine_setup() -> QuarantineSetup:
     packaged.withColumns.return_value = output
     output.schema = quarantine_schema_check(payload_type)
     output.columns = output.schema.fieldNames()
-    return QuarantineSetup(source, packaged, output, payload_type)
+    output.count.return_value = 2
+    return QuarantineSetup(source, packaged, output)
 
 
 def test_normalize_packages_each_row_and_keeps_reasons_outside_payload(
@@ -148,7 +147,6 @@ class CleaningSetup:
     spark: Mock
     bronze: Mock
     checked_bronze: Mock
-    exploded: Mock
     flattened: Mock
     casted: Mock
     checked_sensors: Mock
@@ -173,8 +171,7 @@ def cleaning_setup(mocker: MockerFixture) -> CleaningSetup:
     bronze_quarantine = Mock(name="bronze_quarantine")
     sensor_quarantine = Mock(name="sensor_quarantine")
     bronze.columns = sorted(silver_stage.EXPECTED_BRONZE_COLUMNS)
-    software_type = StructType([StructField("tool", StringType())])
-    validated.schema = silver_schema_check(software_type)
+    validated.schema = SILVER_SCHEMA_CHECK
     validated.columns = validated.schema.fieldNames()
     spark.readStream.table.return_value = bronze
     bronze.withColumn.return_value = checked_bronze
@@ -186,13 +183,12 @@ def cleaning_setup(mocker: MockerFixture) -> CleaningSetup:
     checked_sensors.filter.side_effect = [sensor_quarantine, accepted_sensors]
     accepted_sensors.drop.return_value = validated
     normalize = mocker.patch.object(silver_stage, "normalize_quarantined_df")
-    normalize.side_effect = [Mock(name="normalized_bronze"), Mock(name="normalized_sensors")]
+    normalize.return_value = Mock(name="normalized_rows")
     mocker.patch.object(silver_stage.uuid, "uuid4", return_value=UUID(BATCH_ID))
     return CleaningSetup(
         spark,
         bronze,
         checked_bronze,
-        exploded,
         flattened,
         casted,
         checked_sensors,
@@ -220,11 +216,15 @@ def test_cleaning_reads_configured_source_and_returns_three_outputs(
     config: SilverConfig,
     cleaning_setup: CleaningSetup,
 ) -> None:
-    validated, quarantines = silver_stage.bronze_data_cleaning(cleaning_setup.spark, config)
+    normalized_bronze = Mock(name="normalized_bronze")
+    normalized_sensors = Mock(name="normalized_sensors")
+    cleaning_setup.normalize.side_effect = [normalized_bronze, normalized_sensors]
+    validated, incoming, outgoing = silver_stage.bronze_data_cleaning(cleaning_setup.spark, config)
 
     cleaning_setup.spark.readStream.table.assert_called_once_with(config.source_table)
     assert validated is cleaning_setup.validated
-    assert len(quarantines) == 2
+    assert incoming is normalized_bronze
+    assert outgoing is normalized_sensors
     assert cleaning_setup.normalize.call_args_list[0].args == (cleaning_setup.bronze_quarantine, BATCH_ID)
     assert cleaning_setup.normalize.call_args_list[1].args == (cleaning_setup.sensor_quarantine, BATCH_ID)
 
@@ -236,7 +236,6 @@ def test_cleaning_reads_configured_source_and_returns_three_outputs(
         ("metadata.device_id", "null_metadata_device_id"),
         ("metadata.test_date", "null_metadata_test_date"),
         ("metadata.test_id", "null_metadata_test_id"),
-        ("metadata.testing_software", "null_metadata_testing_software"),
         ("metadata.underlying_system", "null_metadata_underlying_system"),
         ("snapshots", "null_snapshots"),
         ("source_file", "null_source_file"),
@@ -361,14 +360,137 @@ def test_cleaning_propagates_read_failure(config: SilverConfig, cleaning_setup: 
     assert caught.value is failure
 
 
-def test_cleaning_accepts_nullable_schema_and_variable_software_metadata(
+def test_cleaning_accepts_nullable_schema_with_variant_software_metadata(
     config: SilverConfig,
     cleaning_setup: CleaningSetup,
 ) -> None:
-    software_type = StructType([StructField("settings", ArrayType(StringType()))])
     cleaning_setup.validated.schema = StructType(
-        [StructField(field.name, field.dataType, True) for field in silver_schema_check(software_type)]
+        [StructField(field.name, field.dataType, True) for field in SILVER_SCHEMA_CHECK]
     )
-    validated, _ = silver_stage.bronze_data_cleaning(cleaning_setup.spark, config)
+    validated, _, _ = silver_stage.bronze_data_cleaning(cleaning_setup.spark, config)
     assert validated is cleaning_setup.validated
-    assert validated.schema["testing_software"].dataType == software_type
+    assert validated.schema["testing_software"].dataType == VariantType()
+
+
+def test_cleaning_checks_sql_null_and_variant_null_software(
+    config: SilverConfig,
+    cleaning_setup: CleaningSetup,
+) -> None:
+    silver_stage.bronze_data_cleaning(cleaning_setup.spark, config)
+    conditions = reason_conditions(cleaning_setup.bronze.withColumn.call_args.args[1])
+    software = connect_functions.col("metadata.testing_software")
+    assert conditions["null_metadata_testing_software"] == expression_plan(
+        software.isNull() | connect_functions.is_variant_null(software)
+    )
+
+
+def test_cleaning_rejects_struct_when_software_contract_requires_variant(
+    config: SilverConfig,
+    cleaning_setup: CleaningSetup,
+) -> None:
+    cleaning_setup.validated.schema = StructType(
+        [
+            StructField(field.name, StructType([]) if field.name == "testing_software" else field.dataType)
+            for field in SILVER_SCHEMA_CHECK
+        ]
+    )
+    with pytest.raises(ValueError, match="testing_software"):
+        silver_stage.bronze_data_cleaning(cleaning_setup.spark, config)
+
+
+@dataclass(frozen=True)
+class NormalizationSetup:
+    source: Mock
+    projections: list[Mock]
+    deduplicated: list[Mock]
+
+
+@pytest.fixture
+def normalization_setup() -> NormalizationSetup:
+    source = Mock(name="cleaned_stream")
+    source.isStreaming = True
+    projections = [Mock(name=name) for name in ("sensors", "tests", "metadata")]
+    deduplicated = [Mock(name=f"unique_{name}") for name in ("sensors", "tests", "metadata")]
+    source.select.side_effect = projections
+    for projected, unique in zip(projections, deduplicated, strict=True):
+        projected.dropDuplicates.return_value = unique
+    return NormalizationSetup(source, projections, deduplicated)
+
+
+def test_normalization_projects_three_outputs_with_their_natural_keys(
+    normalization_setup: NormalizationSetup,
+) -> None:
+    result = silver_stage.normalized_bronze_tables(cast(DataFrame, normalization_setup.source))
+    assert result == tuple(normalization_setup.deduplicated)
+    assert [call.args for call in normalization_setup.source.select.call_args_list] == [
+        ("test_id", "hardware_name", "sensor_name", "sensor_type", "sensor_value", "polled_at", "source_file"),
+        ("test_id", "tested_at", "device_id", "testing_software", "underlying_system"),
+        ("source_file", "adls_upload_date", "execution_id", "dbx_ingested_at"),
+    ]
+    for projected, keys in zip(
+        normalization_setup.projections,
+        [
+            ["test_id", "hardware_name", "sensor_name", "sensor_type", "polled_at"],
+            ["test_id"],
+            ["source_file"],
+        ],
+        strict=True,
+    ):
+        projected.dropDuplicates.assert_called_once_with(keys)
+
+
+@pytest.mark.parametrize("output", ["incoming", "outgoing", "fct_sensors"])
+@pytest.mark.parametrize("failure_at", [None, "start", "await"])
+def test_streaming_writers_use_distinct_paths_and_propagate_failures(
+    config: SilverConfig,
+    commonconfig: CommonConfig,
+    output: str,
+    failure_at: str | None,
+) -> None:
+    dataframe = Mock(name="streaming_output")
+    writer = dataframe.writeStream.format.return_value
+    writer.outputMode.return_value = writer
+    writer.option.return_value = writer
+    writer.trigger.return_value = writer
+    query = writer.toTable.return_value
+    failure = RuntimeError("Delta write failed")
+    if failure_at == "start":
+        writer.toTable.side_effect = failure
+    elif failure_at == "await":
+        query.awaitTermination.side_effect = failure
+
+    if output in ("incoming", "outgoing"):
+        target = (
+            commonconfig.inc_quarantine_target_table
+            if output == "incoming"
+            else commonconfig.out_quarantine_target_table
+        )
+        checkpoint = commonconfig.checkpoint_location(target)
+    else:
+        target = config.target_table(output)
+        checkpoint = commonconfig.checkpoint_location(output)
+
+    def invoke() -> None:
+        if output == "incoming":
+            silver_stage.write_incoming_quarantine(cast(DataFrame, dataframe), commonconfig)
+        elif output == "outgoing":
+            silver_stage.write_outgoing_quarantine(cast(DataFrame, dataframe), commonconfig)
+        else:
+            silver_stage.write_to_silver(cast(DataFrame, dataframe), config, commonconfig, output)
+
+    if failure_at is None:
+        invoke()
+    else:
+        with pytest.raises(RuntimeError, match="Delta write failed") as caught:
+            invoke()
+        assert caught.value is failure
+
+    dataframe.writeStream.format.assert_called_once_with("delta")
+    writer.outputMode.assert_called_once_with("append")
+    writer.option.assert_any_call("checkpointLocation", checkpoint)
+    writer.trigger.assert_called_once_with(availableNow=True)
+    writer.toTable.assert_called_once_with(target)
+    if failure_at == "start":
+        query.awaitTermination.assert_not_called()
+    else:
+        query.awaitTermination.assert_called_once_with()

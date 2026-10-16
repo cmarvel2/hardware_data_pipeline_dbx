@@ -5,11 +5,13 @@ from uuid import uuid4
 
 import pytest
 from pyspark.sql import SparkSession, functions as F  # noqa
+from pyspark.sql.types import StructType, VariantType
 
 from databricks_pipeline.bronze.config.bronze_config import BronzeConfig
 from databricks_pipeline.bronze.stage.bronze_stage import (
     landing_hardware_autoloader,
 )
+from databricks_pipeline.common.ops_config import CommonConfig
 
 pytestmark = [pytest.mark.integration, pytest.mark.databricks]
 
@@ -19,12 +21,21 @@ def test_landing_hardware_autoloader_ingests_json_into_test_bronze_table(
     test_target: dict[str, object],
 ) -> None:
     variables = cast(dict[str, str], test_target["variables"])
+    missing_ops = {"ops_schema", "ops_volume"} - variables.keys()
+    assert not missing_ops, f"Configure these variables for the test bundle target: {sorted(missing_ops)}"
 
     config = BronzeConfig(
         catalog=variables["catalog"],
         bronze_schema=variables["bronze_schema"],
         landing_volume=variables["landing_volume"],
         bronze_table=variables["bronze_table"],
+    )
+    commonconfig = CommonConfig(
+        catalog=variables["catalog"],
+        ops_schema=variables["ops_schema"],
+        ops_volume=variables["ops_volume"],
+        incoming_quarantine_table=None,
+        outgoing_quarantine_table=None,
     )
 
     test_id = uuid4().hex
@@ -38,6 +49,8 @@ def test_landing_hardware_autoloader_ingests_json_into_test_bronze_table(
                 "underlying_system": "LibreHardwareMonitor",
                 "device_id": device_id,
                 "test_id": f"integration-test-{test_id}",
+                "test_date": "20260913_120000",
+                "testing_software": {"integration_tool": {"profile": "sustained"}},
             },
             "snapshots": [
                 {
@@ -58,6 +71,7 @@ def test_landing_hardware_autoloader_ingests_json_into_test_bronze_table(
     landing_hardware_autoloader(
         spark=spark,
         config=config,
+        commonconfig=commonconfig,
         run_id=execution_id,
     )
 
@@ -90,3 +104,5 @@ def test_landing_hardware_autoloader_ingests_json_into_test_bronze_table(
     assert row["metadata"]["device_id"] == device_id
     assert len(row["snapshots"]) == 1
     assert row["corrupt_record"] is None
+    metadata_type = cast(StructType, matching_rows.schema["metadata"].dataType)
+    assert isinstance(metadata_type["testing_software"].dataType, VariantType)

@@ -20,6 +20,22 @@ variables:
     description: The managed volume name for hardware external azure data ingestion 
   bronze_table: 
     description: The table created that the volume data is ingested
+  silver_schema:
+    description: The schema where transformed bronz data is stored
+  silver_sensors_table:
+    description: fact table for cleaned sensors data
+  silver_dbx_metadata_table:
+    description: dim table for source file metadata and dbx transformation metadata
+  silver_tests_table:
+    description: dim table for metadata on hardware silver_tests_table
+  ops_schema:
+    description: schema for operational functions i.e checkpoints for ingestion tracking
+  ops_volume:
+    description: volume to hold folders for checkpoints and schema inference
+  inc_quarantine_table:
+    description: table holding quarantined data for incoming data from the raw bronze table
+  out_quarantine_table:
+    description: table holding quarantined data from the unpacked sensors fact data before it is normalized
 
 
 targets:
@@ -33,6 +49,15 @@ targets:
       bronze_schema: bronze
       landing_volume: hardware_landing
       bronze_table: sensor_readings
+      silver_schema: silver
+      silver_sensors_table: fct_sensors
+      silver_dbx_metadata_table: dim_dbx_metadata
+      silver_tests_table: dim_hardware_tests
+      ops_schema: ops
+      ops_volume: pipeline_operations
+      inc_quarantine_table: incoming_silver_quarantine
+      out_quarantine_table: outgoing_silver_quarantine
+
 
   test:
     mode: production

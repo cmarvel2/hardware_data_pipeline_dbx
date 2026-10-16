@@ -8,11 +8,12 @@ from pyspark.sql import (
 )
 from pyspark.sql.types import DoubleType, StringType
 
+from databricks_pipeline.common.ops_config import CommonConfig
 from databricks_pipeline.silver.config.silver_config import SilverConfig
 from databricks_pipeline.silver.schema.silver_contract import (
     EXPECTED_BRONZE_COLUMNS,
+    SILVER_SCHEMA_CHECK,
     quarantine_schema_check,
-    silver_schema_check,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,10 +44,11 @@ def normalize_quarantined_df(quarantined_df: DataFrame, quarantine_batch_id) -> 
     else:
         raise ValueError("Mismatch between expected columns in validated_quarantine_df and expected_quarantine_schema")
 
+    logger.info("Quarantined dataframe normalized")
     return valid_quarantined_df
 
 
-def bronze_data_cleaning(spark: SparkSession, config: SilverConfig) -> tuple[DataFrame, tuple[DataFrame, DataFrame]]:
+def bronze_data_cleaning(spark: SparkSession, config: SilverConfig) -> tuple[DataFrame, DataFrame, DataFrame]:
     bronze_df = spark.readStream.table(config.source_table)
 
     missing = EXPECTED_BRONZE_COLUMNS - set(bronze_df.columns)
@@ -64,7 +66,10 @@ def bronze_data_cleaning(spark: SparkSession, config: SilverConfig) -> tuple[Dat
                 F.when(F.col("metadata.device_id").isNull(), "null_metadata_device_id"),
                 F.when(F.col("metadata.test_date").isNull(), "null_metadata_test_date"),
                 F.when(F.col("metadata.test_id").isNull(), "null_metadata_test_id"),
-                F.when(F.col("metadata.testing_software").isNull(), "null_metadata_testing_software"),
+                F.when(
+                    F.col("metadata.testing_software").isNull() | F.is_variant_null(F.col("metadata.testing_software")),
+                    "null_metadata_testing_software",
+                ),
                 F.when(F.col("metadata.underlying_system").isNull(), "null_metadata_underlying_system"),
                 F.when(F.col("snapshots").isNull(), "null_snapshots"),
                 F.when(F.size("snapshots") == 0, "empty_snapshots"),
@@ -136,7 +141,7 @@ def bronze_data_cleaning(spark: SparkSession, config: SilverConfig) -> tuple[Dat
 
     validated_sensors_df = checked_casted_sensors_df.filter(F.size("quarantine") == 0).drop("quarantine")
 
-    expected_silver_schema = silver_schema_check(validated_sensors_df.schema["testing_software"].dataType)
+    expected_silver_schema = SILVER_SCHEMA_CHECK
 
     if set(validated_sensors_df.columns) == set(expected_silver_schema.fieldNames()):
         for col in validated_sensors_df.columns:
@@ -148,15 +153,62 @@ def bronze_data_cleaning(spark: SparkSession, config: SilverConfig) -> tuple[Dat
         raise ValueError("Mismatch between expected columns in validated_sensors_df and expected_silver_schema")
 
     logger.info(f"Silver dataframe prepped for denormalization from bronze table: {config.source_table} ")
-    return validated_sensors_df, (
+    return (
+        validated_sensors_df,
         normalize_quarantined_df(quarantined_bronze_df, quarantine_batch_id),
         normalize_quarantined_df(quarantined_sensors_df, quarantine_batch_id),
     )
 
 
-def denormalized_bronze_tables(cleaned_bronze_df: DataFrame):
-    return
+def normalized_bronze_tables(cleaned_bronze_df: DataFrame):
+    sensors_fct = cleaned_bronze_df.select(
+        "test_id", "hardware_name", "sensor_name", "sensor_type", "sensor_value", "polled_at", "source_file"
+    ).dropDuplicates(["test_id", "hardware_name", "sensor_name", "sensor_type", "polled_at"])
+
+    tests_dim = cleaned_bronze_df.select(
+        "test_id",
+        "tested_at",
+        "device_id",
+        "testing_software",
+        "underlying_system",
+    ).dropDuplicates(["test_id"])
+
+    dbx_metadata_dim = cleaned_bronze_df.select(
+        "source_file", "adls_upload_date", "execution_id", "dbx_ingested_at"
+    ).dropDuplicates(["source_file"])
+
+    logger.info("Duplicates dropped and bronze table normalized")
+    return sensors_fct, tests_dim, dbx_metadata_dim
 
 
-def write_to_silver(silver_dfs: DataFrame, quarantined_dfs: tuple[DataFrame, DataFrame]) -> None:
-    return
+def write_incoming_quarantine(quarantined_df: DataFrame, commonconfig: CommonConfig) -> None:
+    (
+        quarantined_df.writeStream.format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", commonconfig.checkpoint_location(commonconfig.inc_quarantine_target_table))
+        .trigger(availableNow=True)
+        .toTable(commonconfig.inc_quarantine_target_table)
+    ).awaitTermination()
+    logger.info(f"Table write completed to target table: {commonconfig.incoming_quarantine_table}")
+
+
+def write_outgoing_quarantine(quarantined_df: DataFrame, commonconfig: CommonConfig) -> None:
+    (
+        quarantined_df.writeStream.format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", commonconfig.checkpoint_location(commonconfig.out_quarantine_target_table))
+        .trigger(availableNow=True)
+        .toTable(commonconfig.out_quarantine_target_table)
+    ).awaitTermination()
+    logger.info(f"Table write completed to target table: {commonconfig.outgoing_quarantine_table}")
+
+
+def write_to_silver(silver_df: DataFrame, config: SilverConfig, commonconfig: CommonConfig, tablename: str) -> None:
+    (
+        silver_df.writeStream.format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", commonconfig.checkpoint_location(tablename))
+        .trigger(availableNow=True)
+        .toTable(config.target_table(tablename))
+    ).awaitTermination()
+    logger.info(f"Table write completed to target table: {tablename}")

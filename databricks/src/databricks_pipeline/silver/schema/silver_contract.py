@@ -7,6 +7,7 @@ from pyspark.sql.types import (
     StructField,
     StructType,
     TimestampType,
+    VariantType,
 )
 
 EXPECTED_BRONZE_COLUMNS = frozenset(
@@ -23,25 +24,24 @@ EXPECTED_BRONZE_COLUMNS = frozenset(
 )
 
 
-def silver_schema_check(testing_software_struct: DataType) -> StructType:
-    return StructType(
-        [
-            StructField("device_id", StringType(), False),
-            StructField("test_id", StringType(), False),
-            StructField("tested_at", TimestampType(), False),
-            StructField("testing_software", testing_software_struct, False),
-            StructField("underlying_system", StringType(), False),
-            StructField("hardware_name", StringType(), False),
-            StructField("sensor_name", StringType(), False),
-            StructField("sensor_type", StringType(), False),
-            StructField("sensor_value", DoubleType(), False),
-            StructField("polled_at", TimestampType(), False),
-            StructField("dbx_ingested_at", TimestampType(), False),
-            StructField("adls_upload_date", DateType(), False),
-            StructField("source_file", StringType(), False),
-            StructField("execution_id", StringType(), False),
-        ]
-    )
+SILVER_SCHEMA_CHECK = StructType(
+    [
+        StructField("device_id", StringType(), False),
+        StructField("test_id", StringType(), False),
+        StructField("tested_at", TimestampType(), False),
+        StructField("testing_software", VariantType(), False),
+        StructField("underlying_system", StringType(), False),
+        StructField("hardware_name", StringType(), False),
+        StructField("sensor_name", StringType(), False),
+        StructField("sensor_type", StringType(), False),
+        StructField("sensor_value", DoubleType(), False),
+        StructField("polled_at", TimestampType(), False),
+        StructField("dbx_ingested_at", TimestampType(), False),
+        StructField("adls_upload_date", DateType(), False),
+        StructField("source_file", StringType(), False),
+        StructField("execution_id", StringType(), False),
+    ]
+)
 
 
 def quarantine_schema_check(quarantined_rows_array: DataType) -> StructType:

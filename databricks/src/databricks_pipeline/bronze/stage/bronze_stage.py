@@ -8,19 +8,22 @@ from databricks_pipeline.bronze.schema.bronze_contract import (
     RESCUED_DATA_COLUMN,
     add_ingestion_metadata,
 )
+from databricks_pipeline.common.ops_config import CommonConfig
 
 logger = logging.getLogger(__name__)
 
 
-def landing_hardware_autoloader(spark: SparkSession, config: BronzeConfig, run_id: str) -> None:
+def landing_hardware_autoloader(
+    spark: SparkSession, config: BronzeConfig, commonconfig: CommonConfig, run_id: str
+) -> None:
     sdf = (
         spark.readStream.format("cloudFiles")
         .option("cloudFiles.format", "json")
-        .option("cloudFiles.schemaLocation", config.schema_location)
+        .option("cloudFiles.schemaLocation", commonconfig.schema_location(config.bronze_table))
         .option("cloudFiles.inferColumnTypes", "true")
         .option("rescuedDataColumn", RESCUED_DATA_COLUMN)
         .option("columnNameOfCorruptRecord", CORRUPT_DATA_COLUMN)
-        .option("cloudFiles.schemaHints", f"{CORRUPT_DATA_COLUMN} STRING")
+        .option("cloudFiles.schemaHints", f"{CORRUPT_DATA_COLUMN} STRING,  metadata.testing_software VARIANT")
         .option("cloudFiles.partitionColumns", "ingest_date")
         .load(config.source_path)
     )
@@ -30,7 +33,7 @@ def landing_hardware_autoloader(spark: SparkSession, config: BronzeConfig, run_i
 
     (
         sdf.writeStream.format("delta")
-        .option("checkpointLocation", config.checkpoint_location)
+        .option("checkpointLocation", commonconfig.checkpoint_location(config.bronze_table))
         .option("mergeSchema", "true")
         .trigger(availableNow=True)
         .toTable(config.target_table)

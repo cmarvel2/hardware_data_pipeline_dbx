@@ -41,36 +41,6 @@ def test_bronze_config_builds_expected_source_path(
     assert config.source_path == ("/Volumes/hardware_test/bronze/hardware_landing/incoming")
 
 
-def test_bronze_config_builds_expected_pipeline_state_path(
-    config: BronzeConfig,
-) -> None:
-    assert config.pipeline_state_path == (
-        "/Volumes/hardware_test/bronze/hardware_landing/_pipeline_state/sensor_readings"
-    )
-
-
-def test_bronze_config_builds_expected_schema_location(
-    config: BronzeConfig,
-) -> None:
-    assert config.schema_location == (
-        "/Volumes/hardware_test/bronze/hardware_landing/_pipeline_state/sensor_readings/schema"
-    )
-
-
-def test_bronze_config_builds_expected_checkpoint_location(
-    config: BronzeConfig,
-) -> None:
-    assert config.checkpoint_location == (
-        "/Volumes/hardware_test/bronze/hardware_landing/_pipeline_state/sensor_readings/checkpoint"
-    )
-
-
-def test_pipeline_state_is_outside_monitored_source_tree(
-    config: BronzeConfig,
-) -> None:
-    assert not config.pipeline_state_path.startswith(f"{config.source_path}/")
-
-
 def test_bronze_config_builds_expected_target_table(
     config: BronzeConfig,
 ) -> None:

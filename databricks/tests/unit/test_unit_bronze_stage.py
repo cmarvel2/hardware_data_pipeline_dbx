@@ -6,6 +6,7 @@ from pytest_mock import MockerFixture
 
 from databricks_pipeline.bronze.config.bronze_config import BronzeConfig
 from databricks_pipeline.bronze.stage import bronze_stage
+from databricks_pipeline.common.ops_config import CommonConfig
 
 pytestmark = pytest.mark.unit
 
@@ -72,11 +73,13 @@ def stage_test_setup(mocker: MockerFixture) -> StageTestSetup:
 
 def test_landing_hardware_autoloader_reads_source_with_expected_options(
     config: BronzeConfig,
+    commonconfig: CommonConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
     bronze_stage.landing_hardware_autoloader(
         spark=stage_test_setup.spark,
         config=config,
+        commonconfig=commonconfig,
         run_id="run-123",
     )
 
@@ -84,7 +87,7 @@ def test_landing_hardware_autoloader_reads_source_with_expected_options(
     stage_test_setup.reader.option.assert_has_calls(
         [
             call("cloudFiles.format", "json"),
-            call("cloudFiles.schemaLocation", config.schema_location),
+            call("cloudFiles.schemaLocation", commonconfig.schema_location(config.bronze_table)),
             call("cloudFiles.inferColumnTypes", "true"),
             call("rescuedDataColumn", bronze_stage.RESCUED_DATA_COLUMN),
             call(
@@ -93,7 +96,7 @@ def test_landing_hardware_autoloader_reads_source_with_expected_options(
             ),
             call(
                 "cloudFiles.schemaHints",
-                f"{bronze_stage.CORRUPT_DATA_COLUMN} STRING",
+                f"{bronze_stage.CORRUPT_DATA_COLUMN} STRING,  metadata.testing_software VARIANT",
             ),
             call("cloudFiles.partitionColumns", "ingest_date"),
         ]
@@ -104,11 +107,13 @@ def test_landing_hardware_autoloader_reads_source_with_expected_options(
 
 def test_landing_hardware_autoloader_adds_ingestion_metadata(
     config: BronzeConfig,
+    commonconfig: CommonConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
     bronze_stage.landing_hardware_autoloader(
         spark=stage_test_setup.spark,
         config=config,
+        commonconfig=commonconfig,
         run_id="run-123",
     )
 
@@ -120,11 +125,13 @@ def test_landing_hardware_autoloader_adds_ingestion_metadata(
 
 def test_landing_hardware_autoloader_renames_landing_date(
     config: BronzeConfig,
+    commonconfig: CommonConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
     bronze_stage.landing_hardware_autoloader(
         spark=stage_test_setup.spark,
         config=config,
+        commonconfig=commonconfig,
         run_id="run-123",
     )
 
@@ -136,18 +143,20 @@ def test_landing_hardware_autoloader_renames_landing_date(
 
 def test_landing_hardware_autoloader_writes_renamed_dataframe_to_delta(
     config: BronzeConfig,
+    commonconfig: CommonConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
     bronze_stage.landing_hardware_autoloader(
         spark=stage_test_setup.spark,
         config=config,
+        commonconfig=commonconfig,
         run_id="run-123",
     )
 
     stage_test_setup.renamed_dataframe.writeStream.format.assert_called_once_with("delta")
     stage_test_setup.writer.option.assert_has_calls(
         [
-            call("checkpointLocation", config.checkpoint_location),
+            call("checkpointLocation", commonconfig.checkpoint_location(config.bronze_table)),
             call("mergeSchema", "true"),
         ]
     )
@@ -158,11 +167,13 @@ def test_landing_hardware_autoloader_writes_renamed_dataframe_to_delta(
 
 def test_landing_hardware_autoloader_waits_for_query_to_finish(
     config: BronzeConfig,
+    commonconfig: CommonConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
     bronze_stage.landing_hardware_autoloader(
         spark=stage_test_setup.spark,
         config=config,
+        commonconfig=commonconfig,
         run_id="run-123",
     )
 
@@ -171,11 +182,13 @@ def test_landing_hardware_autoloader_waits_for_query_to_finish(
 
 def test_landing_hardware_autoloader_returns_none(
     config: BronzeConfig,
+    commonconfig: CommonConfig,
     stage_test_setup: StageTestSetup,
 ) -> None:
     result = bronze_stage.landing_hardware_autoloader(
         spark=stage_test_setup.spark,
         config=config,
+        commonconfig=commonconfig,
         run_id="run-123",
     )
 

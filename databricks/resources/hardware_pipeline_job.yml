@@ -11,13 +11,28 @@ resources:
           default: ${var.landing_volume}
         - name: bronze_table
           default: ${var.bronze_table}
+        - name: silver_schema
+          default: ${var.silver_schema}
+        - name: silver_sensors_table
+          default: ${var.silver_sensors_table}
+        - name: silver_dbx_metadata_table
+          default: ${var.silver_dbx_metadata_table}
+        - name: silver_tests_table
+          default: ${var.silver_tests_table}
+        - name: ops_schema
+          default: ${var.ops_schema}
+        - name: ops_volume
+          default: ${var.ops_volume}
+        - name: inc_quarantine_table
+          default: ${var.inc_quarantine_table}
+        - name: out_quarantine_table
+          default: ${var.out_quarantine_table} 
       tasks:
         - task_key: bronze_ingest
           python_wheel_task:
             package_name: hardware_data_pipeline
             entry_point: main
             parameters:
-            - --stage
             - bronze
             - --catalog
             - "{{job.parameters.catalog}}"
@@ -27,8 +42,43 @@ resources:
             - "{{job.parameters.landing_volume}}"
             - --bronze-table
             - "{{job.parameters.bronze_table}}"
+            - --ops-schema
+            - "{{job.parameters.ops_schema}}"
+            - --ops-volume
+            - "{{job.parameters.ops_volume}}"
             - --pipeline-run-id
             - '{{job.run_id}}'
+          environment_key: default
+        - task_key: silver_transformation
+          depends_on:
+            - task_key: bronze_ingest
+          python_wheel_task:
+            package_name: hardware_data_pipeline
+            entry_point: main
+            parameters:
+            - silver
+            - --catalog
+            - "{{job.parameters.catalog}}"
+            - --bronze-schema
+            - "{{job.parameters.bronze_schema}}"
+            - --bronze-table
+            - "{{job.parameters.bronze_table}}"
+            - --silver-schema
+            - "{{job.parameters.silver_schema}}"
+            - "--silver-sensors-table"
+            - "{{job.parameters.silver_sensors_table}}"
+            - --silver-dbx-metadata-table
+            - "{{job.parameters.silver_dbx_metadata_table}}"
+            - --silver-tests-table
+            - "{{job.parameters.silver_tests_table}}"
+            - --ops-schema
+            - "{{job.parameters.ops_schema}}"
+            - --ops-volume
+            - "{{job.parameters.ops_volume}}"
+            - --inc-quarantine-table
+            - "{{job.parameters.inc_quarantine_table}}"
+            - --out-quarantine-table
+            - "{{job.parameters.out_quarantine_table}}"
           environment_key: default
       trigger:
         pause_status: UNPAUSED
