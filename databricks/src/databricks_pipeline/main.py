@@ -46,7 +46,6 @@ def main():
     spark = SparkSession.builder.appName("Hardware Data Pipeline").getOrCreate()
 
     spark.conf.set("spark.sql.session.timeZone", "UTC")
-    spark.conf.set("spark.sql.timestampType", "TIMESTAMP_LTZ")
 
     if args.stage == "bronze":
         bcfg = bronze_config.BronzeConfig(

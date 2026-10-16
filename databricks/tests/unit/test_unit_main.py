@@ -92,7 +92,6 @@ def test_bronze_subcommand_requires_no_silver_options(
     entrypoint_setup.cleaning.assert_not_called()
     assert entrypoint_setup.spark.conf.set.call_args_list == [
         call("spark.sql.session.timeZone", "UTC"),
-        call("spark.sql.timestampType", "TIMESTAMP_LTZ"),
     ]
 
 
