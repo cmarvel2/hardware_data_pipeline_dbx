@@ -7,8 +7,21 @@ from databricks.connect import DatabricksSession
 from databricks.sdk import WorkspaceClient
 from pyspark.sql import SparkSession
 
+from databricks_pipeline.common.ops_config import CommonConfig
+
 AUTH_PROFILE = "test"
 BUNDLE_TARGET = "test"
+
+
+@pytest.fixture
+def commonconfig() -> CommonConfig:
+    return CommonConfig(
+        catalog="hardware_test",
+        ops_volume="pipeline_operations",
+        ops_schema="ops",
+        incoming_quarantine_table="incoming_silver_quarantine",
+        outgoing_quarantine_table="outgoing_silver_quarantine",
+    )
 
 
 @pytest.fixture(scope="session")
