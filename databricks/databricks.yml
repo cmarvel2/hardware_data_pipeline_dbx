@@ -47,7 +47,6 @@ targets:
     default: true
     workspace:
       host: https://adb-7405612414795918.18.azuredatabricks.net
-      root_path: /Workspace/Users/cmarvel@umich.edu/.bundle/${bundle.name}/${bundle.target}
     variables:
       catalog: hardware_dev  
       bronze_schema: bronze
@@ -68,7 +67,6 @@ targets:
     mode: production
     workspace:
       host: https://adb-7405606385601384.4.azuredatabricks.net
-      root_path: /Workspace/Users/cmarvel@umich.edu/.bundle/${bundle.name}/${bundle.target}
     variables: 
       catalog: hardware_test
       bronze_schema: bronze
@@ -90,8 +88,7 @@ targets:
   prod:
     mode: production
     workspace:
-      host: https://adb-7405606693826607.7.azuredatabricks.net
-      root_path: /Workspace/Users/cmarvel@umich.edu/.bundle/${bundle.name}/${bundle.target}
+      host: https://adb-7405606693826607.7.azuredatabricks.net2
     variables:
       catalog: hardware_prod
       bronze_schema: bronze
