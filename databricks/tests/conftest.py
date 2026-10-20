@@ -1,5 +1,8 @@
+import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import pytest
 import yaml
@@ -8,9 +11,38 @@ from databricks.sdk import WorkspaceClient
 from pyspark.sql import SparkSession
 
 from databricks_pipeline.common.ops_config import CommonConfig
+from databricks_pipeline.gold.config.gold_config import GoldConfig
 
 AUTH_PROFILE = "test"
 BUNDLE_TARGET = "test"
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "e2e: complete Databricks landing-to-Gold pipeline test")
+
+
+@pytest.fixture
+def lakehouse(
+    request: pytest.FixtureRequest, test_target: dict[str, object]
+) -> Iterator[tuple[SparkSession, GoldConfig, str]]:
+    if os.getenv("RUN_DATABRICKS_TESTS") != "1":
+        pytest.skip("Set RUN_DATABRICKS_TESTS=1 to create isolated test schemas and run cloud tests.")
+
+    session = cast(SparkSession, request.getfixturevalue("spark"))
+    variables = cast(dict[str, str], test_target["variables"])
+    catalog = variables["catalog"]
+    prefix = f"pytest_{uuid4().hex}"
+    bronze_schema, silver_schema, gold_schema = (f"{prefix}_{layer}" for layer in ("bronze", "silver", "gold"))
+    created: list[str] = []
+    try:
+        for schema in (bronze_schema, silver_schema, gold_schema):
+            qualified = f"{catalog}.{schema}"
+            session.sql(f"CREATE SCHEMA {qualified}")
+            created.append(qualified)
+        yield session, GoldConfig(catalog, silver_schema, gold_schema), bronze_schema
+    finally:
+        for qualified in reversed(created):
+            session.sql(f"DROP SCHEMA IF EXISTS {qualified} CASCADE")
 
 
 @pytest.fixture

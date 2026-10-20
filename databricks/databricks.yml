@@ -73,6 +73,15 @@ targets:
       bronze_schema: bronze
       landing_volume: hardware_landing
       bronze_table: sensor_readings
+      silver_schema: silver
+      silver_sensors_table: fct_sensors
+      silver_dbx_metadata_table: dim_dbx_metadata
+      silver_tests_table: dim_hardware_tests
+      ops_schema: ops
+      ops_volume: pipeline_operations
+      inc_quarantine_table: incoming_silver_quarantine
+      out_quarantine_table: outgoing_silver_quarantine
+      gold_schema: gold
     permissions:
       - user_name: cmarvel@umich.edu
         level: CAN_MANAGE
@@ -87,6 +96,15 @@ targets:
       bronze_schema: bronze
       landing_volume: hardware_landing
       bronze_table: sensor_readings
+      silver_schema: silver
+      silver_sensors_table: fct_sensors
+      silver_dbx_metadata_table: dim_dbx_metadata
+      silver_tests_table: dim_hardware_tests
+      ops_schema: ops
+      ops_volume: pipeline_operations
+      inc_quarantine_table: incoming_silver_quarantine
+      out_quarantine_table: outgoing_silver_quarantine
+      gold_schema: gold
     permissions:
       - user_name: cmarvel@umich.edu
         level: CAN_MANAGE

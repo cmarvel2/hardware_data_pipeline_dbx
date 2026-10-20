@@ -13,6 +13,8 @@ pytestmark = pytest.mark.unit
 
 
 def stage_arguments(stage: str) -> list[str]:
+    if stage == "gold":
+        return ["main", "gold", "--catalog", "hardware_test", "--silver-schema", "silver", "--gold-schema", "gold"]
     shared = [
         "--catalog",
         "hardware_test",
@@ -56,6 +58,7 @@ class EntrypointSetup:
     incoming: Mock
     outgoing: Mock
     silver: Mock
+    gold: Mock
 
 
 @pytest.fixture
@@ -70,12 +73,28 @@ def entrypoint_setup(mocker: MockerFixture) -> EntrypointSetup:
         "write_incoming_quarantine",
         "write_outgoing_quarantine",
         "write_to_silver",
+        "table_asus_proart_p16_h7606wv",
     ]
     patched = [mocker.patch.object(entrypoint, name) for name in names]
-    bronze, cleaning, normalize, incoming, outgoing, silver = patched
+    bronze, cleaning, normalize, incoming, outgoing, silver, gold = patched
     cleaning.return_value = (Mock(name="valid"), Mock(name="incoming"), Mock(name="outgoing"))
     normalize.return_value = (Mock(name="facts"), Mock(name="tests"), Mock(name="files"))
-    return EntrypointSetup(session_class, spark, bronze, cleaning, normalize, incoming, outgoing, silver)
+    return EntrypointSetup(session_class, spark, bronze, cleaning, normalize, incoming, outgoing, silver, gold)
+
+
+def test_gold_subcommand_dispatches_only_gold(
+    monkeypatch: pytest.MonkeyPatch,
+    entrypoint_setup: EntrypointSetup,
+) -> None:
+    monkeypatch.setattr(sys, "argv", stage_arguments("gold"))
+    entrypoint.main()
+    entrypoint_setup.gold.assert_called_once()
+    kwargs = entrypoint_setup.gold.call_args.kwargs
+    assert kwargs["spark"] is entrypoint_setup.spark
+    assert kwargs["config"].target_table("mart_proart_p16_h7606wv") == ("hardware_test.gold.mart_proart_p16_h7606wv")
+    entrypoint_setup.bronze.assert_not_called()
+    entrypoint_setup.cleaning.assert_not_called()
+    entrypoint_setup.silver.assert_not_called()
 
 
 def test_bronze_subcommand_requires_no_silver_options(
@@ -120,7 +139,14 @@ def test_silver_subcommand_dispatches_all_outputs_without_landing_argument(
 
 @pytest.mark.parametrize(
     ("stage", "missing"),
-    [("bronze", "--landing-volume"), ("bronze", "--pipeline-run-id"), ("silver", "--silver-tests-table")],
+    [
+        ("bronze", "--landing-volume"),
+        ("bronze", "--pipeline-run-id"),
+        ("silver", "--silver-tests-table"),
+        ("gold", "--catalog"),
+        ("gold", "--silver-schema"),
+        ("gold", "--gold-schema"),
+    ],
 )
 def test_missing_stage_arguments_fail_before_spark_starts(
     monkeypatch: pytest.MonkeyPatch,
@@ -140,7 +166,7 @@ def test_missing_stage_arguments_fail_before_spark_starts(
     entrypoint_setup.session_class.builder.appName.assert_not_called()
 
 
-@pytest.mark.parametrize("stage", ["bronze", "silver"])
+@pytest.mark.parametrize("stage", ["bronze", "silver", "gold"])
 def test_stage_help_does_not_start_spark(
     monkeypatch: pytest.MonkeyPatch,
     entrypoint_setup: EntrypointSetup,
@@ -153,11 +179,12 @@ def test_stage_help_does_not_start_spark(
     assert caught.value.code == 0
     help_text = capsys.readouterr().out
     assert ("--landing-volume" in help_text) == (stage == "bronze")
-    assert ("--silver-schema" in help_text) == (stage == "silver")
+    assert ("--silver-schema" in help_text) == (stage in {"silver", "gold"})
+    assert ("--gold-schema" in help_text) == (stage == "gold")
     entrypoint_setup.session_class.builder.appName.assert_not_called()
 
 
-@pytest.mark.parametrize("task_key", ["bronze_ingest", "silver_transformation"])
+@pytest.mark.parametrize("task_key", ["bronze_ingest", "silver_transformation", "gold_table_asus_proart_p16_h7606wv"])
 def test_job_task_arguments_are_accepted_by_entrypoint(
     monkeypatch: pytest.MonkeyPatch,
     entrypoint_setup: EntrypointSetup,
@@ -170,5 +197,8 @@ def test_job_task_arguments_are_accepted_by_entrypoint(
     entrypoint.main()
     if task_key == "bronze_ingest":
         entrypoint_setup.bronze.assert_called_once()
-    else:
+    elif task_key == "silver_transformation":
         entrypoint_setup.cleaning.assert_called_once()
+    else:
+        entrypoint_setup.gold.assert_called_once()
+        assert task["depends_on"] == [{"task_key": "silver_transformation"}]
