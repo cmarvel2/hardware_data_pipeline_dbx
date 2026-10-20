@@ -27,6 +27,8 @@ resources:
           default: ${var.inc_quarantine_table}
         - name: out_quarantine_table
           default: ${var.out_quarantine_table} 
+        - name: gold_schema
+          default: ${var.gold_schema}
       tasks:
         - task_key: bronze_ingest
           python_wheel_task:
@@ -79,6 +81,21 @@ resources:
             - "{{job.parameters.inc_quarantine_table}}"
             - --out-quarantine-table
             - "{{job.parameters.out_quarantine_table}}"
+          environment_key: default
+        - task_key: gold_table_asus_proart_p16_h7606wv
+          depends_on:
+            - task_key: silver_transformation
+          python_wheel_task:
+            package_name: hardware_data_pipeline
+            entry_point: main
+            parameters:
+            - gold 
+            - --catalog
+            - "{{job.parameters.catalog}}"
+            - --silver-schema
+            - "{{job.parameters.silver_schema}}"
+            - --gold-schema
+            - "{{job.parameters.gold_schema}}"
           environment_key: default
       trigger:
         pause_status: UNPAUSED
