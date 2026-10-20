@@ -36,6 +36,9 @@ variables:
     description: table holding quarantined data for incoming data from the raw bronze table
   out_quarantine_table:
     description: table holding quarantined data from the unpacked sensors fact data before it is normalized
+  gold_schema:
+    description: The schema where tables used for analysis are
+  
 
 
 targets:
@@ -57,6 +60,7 @@ targets:
       ops_volume: pipeline_operations
       inc_quarantine_table: incoming_silver_quarantine
       out_quarantine_table: outgoing_silver_quarantine
+      gold_schema: gold
 
 
   test:

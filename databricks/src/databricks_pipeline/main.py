@@ -5,6 +5,8 @@ from pyspark.sql import SparkSession
 from databricks_pipeline.bronze.config import bronze_config
 from databricks_pipeline.bronze.stage.bronze_stage import landing_hardware_autoloader
 from databricks_pipeline.common import logging_dbx, ops_config
+from databricks_pipeline.gold.config import gold_config
+from databricks_pipeline.gold.stage.gold_stage import table_asus_proart_p16_h7606wv
 from databricks_pipeline.silver.config import silver_config
 from databricks_pipeline.silver.stage.silver_stage import (
     bronze_data_cleaning,
@@ -22,6 +24,7 @@ def main():
     commands = parser.add_subparsers(dest="stage", required=True)
     bronze_parser = commands.add_parser("bronze")
     silver_parser = commands.add_parser("silver")
+    gold_parser = commands.add_parser("gold")
 
     bronze_parser.add_argument("--catalog", required=True)
     bronze_parser.add_argument("--bronze-schema", required=True)
@@ -42,6 +45,10 @@ def main():
     silver_parser.add_argument("--ops-volume", required=True)
     silver_parser.add_argument("--inc-quarantine-table", required=True)
     silver_parser.add_argument("--out-quarantine-table", required=True)
+
+    gold_parser.add_argument("--catalog", required=True)
+    gold_parser.add_argument("--silver-schema", required=True)
+    gold_parser.add_argument("--gold-schema", required=True)
     args = parser.parse_args()
     spark = SparkSession.builder.appName("Hardware Data Pipeline").getOrCreate()
 
@@ -92,6 +99,14 @@ def main():
         write_to_silver(
             silver_df=dim_dbx_metadata, config=scfg, commonconfig=ccfg, tablename=args.silver_dbx_metadata_table
         )
+    elif args.stage == "gold":
+        gcfg = gold_config.GoldConfig(
+            catalog=args.catalog,
+            silver_schema=args.silver_schema,
+            gold_schema=args.gold_schema,
+        )
+
+        table_asus_proart_p16_h7606wv(spark=spark, config=gcfg)
     else:
         parser.error(f"{args.stage} is not a selectable stage")
 
