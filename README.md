@@ -12,13 +12,10 @@ The original analysis was completed with a Python and LibreHardwareMonitor colle
 ## Data Architecture
 The pipeline collects CPU, GPU, and memory sensor data from the local hardware device through a Python ingestion script using LibreHardwareMonitor. The ingestion process buffers sensor snapshots into JSON payloads and uploads the raw batches to an Azure Data Lake Storage landing container.
 
-Azure Databricks processes the raw sensor data through Bronze, Silver, and Gold layers. The Bronze layer retains the raw landed data, the Silver layer standardizes and cleans the sensor records, and the Gold layer prepares the datasets for downstream hardware performance reporting. Unity Catalog provides governance for the lakehouse data and Power BI consumes the Gold-layer datasets for analysis.
+Azure Databricks is used as the data warehouse following a medallion architecture for the sensor data, The Bronze layer retains the raw landed data as a struct type with schema evolution in the bronze table, the Silver layer cleans the sensor records by removing null & nan values as well as try casting certain columns, and the Gold layer prepares the datasets for downstream hardware performance reporting for my Asus ProArt P16 Laptop by joining normalized silver tables together and added calculations. Unity Catalog provides governance for the lakehouse data as well as observability and data quality, while Power BI consumes the Gold-layer table for analysis.
 
 - High level pipeline diagram
 ![alt text](<data diag.png>)
-
-## Prerequisites / How to Run The Project
-**The original pipeline used Azure PostgreSQL as a tightly coupled database centered storage and transformation layer. The current project is undergoing a migration to a decoupled lakehouse architecture built on Azure Data Lake Storage and Azure Databricks.**
  
 ## Analysis & Validation report
 - Link to written report: (https://umich-my.sharepoint.com/:w:/g/personal/cmarvel_umich_edu/IQAfCteE0Ut2RqWBQZsi3vi6AYqR2JJwHK2cvWhPIUCI3GU?e=486AAi)
